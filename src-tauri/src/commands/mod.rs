@@ -7,7 +7,9 @@ use crate::settings::{
     get_settings, update_checks_forced_disabled, write_settings, AppSettings, LogLevel,
 };
 use crate::utils::cancel_current_operation;
+use std::path::Path;
 use tauri::{AppHandle, Manager};
+#[cfg(not(target_os = "linux"))]
 use tauri_plugin_opener::OpenerExt;
 
 #[tauri::command]
@@ -84,9 +86,7 @@ pub fn open_recordings_folder(app: AppHandle) -> Result<(), String> {
 
     let recordings_dir = app_data_dir.join("recordings");
 
-    let path = recordings_dir.to_string_lossy().as_ref().to_string();
-    app.opener()
-        .open_path(path, None::<String>)
+    open_directory(&app, &recordings_dir)
         .map_err(|e| format!("Failed to open recordings folder: {}", e))?;
 
     Ok(())
@@ -98,10 +98,7 @@ pub fn open_log_dir(app: AppHandle) -> Result<(), String> {
     let log_dir = crate::portable::app_log_dir(&app)
         .map_err(|e| format!("Failed to get log directory: {}", e))?;
 
-    let path = log_dir.to_string_lossy().as_ref().to_string();
-    app.opener()
-        .open_path(path, None::<String>)
-        .map_err(|e| format!("Failed to open log directory: {}", e))?;
+    open_directory(&app, &log_dir).map_err(|e| format!("Failed to open log directory: {}", e))?;
 
     Ok(())
 }
@@ -112,12 +109,29 @@ pub fn open_app_data_dir(app: AppHandle) -> Result<(), String> {
     let app_data_dir = crate::portable::app_data_dir(&app)
         .map_err(|e| format!("Failed to get app data directory: {}", e))?;
 
-    let path = app_data_dir.to_string_lossy().as_ref().to_string();
-    app.opener()
-        .open_path(path, None::<String>)
+    open_directory(&app, &app_data_dir)
         .map_err(|e| format!("Failed to open app data directory: {}", e))?;
 
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn open_directory(_app: &AppHandle, path: &Path) -> Result<(), String> {
+    let status = std::process::Command::new("xdg-open")
+        .arg(path)
+        .status()
+        .map_err(|error| error.to_string())?;
+    if !status.success() {
+        return Err(format!("xdg-open exited with {status}"));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn open_directory(app: &AppHandle, path: &Path) -> Result<(), String> {
+    app.opener()
+        .open_path(path.to_string_lossy().into_owned(), None::<String>)
+        .map_err(|error| error.to_string())
 }
 
 /// Check if Apple Intelligence is available on this device.
